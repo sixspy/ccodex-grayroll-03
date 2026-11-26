@@ -1,8 +1,6 @@
 """控制台摘要。"""
 from __future__ import annotations
 
-import time
-
 from fastapi import APIRouter, Header
 
 from auth import current_user
@@ -24,13 +22,6 @@ def dashboard(authorization: str | None = Header(default=None)):
             "SELECT COUNT(*) c FROM release_shadows WHERE status='open'"
         ).fetchone()["c"]
         overrides = conn.execute("SELECT COUNT(*) c FROM overrides WHERE active=1").fetchone()["c"]
-        overrides_expiring = conn.execute(
-            "SELECT COUNT(*) c FROM overrides WHERE active=1 AND expires_at IS NOT NULL AND expires_at <= ?",
-            (time.time(),),
-        ).fetchone()["c"]
-        override_shadows = conn.execute(
-            "SELECT COUNT(*) c FROM override_shadows WHERE status='open'"
-        ).fetchone()["c"]
         by_status = [
             {
                 "status": r["status"],
@@ -52,8 +43,6 @@ def dashboard(authorization: str | None = Header(default=None)):
         "releases": releases,
         "open_shadows": shadows,
         "active_overrides": overrides,
-        "expired_overrides": overrides_expiring,
-        "open_override_shadows": override_shadows,
         "by_status": by_status,
         "recent": recent,
     }

@@ -22,10 +22,9 @@
     "flag_id": 1,
     "env_id": 3,
     "action": "override",
-    "detail": "u-9999 -> force_on（到期 2027-01-15 16:00:00）",
+    "detail": "u-9999 -> force_on",
     "actor": "writer",
-    "created_at": 1700210000.0,
-    "expires_at": 1800000000.0
+    "created_at": 1700210000.0
   },
   {
     "id": 4,
