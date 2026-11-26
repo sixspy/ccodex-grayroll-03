@@ -46,10 +46,11 @@ body {
 }
 .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1rem; }
 .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; }
+.span-3 { grid-column: span 3; }
 .span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; }
 .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
 @media (max-width: 900px) {
-  .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
+  .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
 }
 h2 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 0.7rem; }
 .muted { color: var(--muted); font-size: 0.86rem; }

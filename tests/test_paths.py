@@ -38,8 +38,10 @@ def test_override_force_on():
             json={"flag_key": "checkout.new_pay", "env_code": "prod", "subject_key": "u-9999"},
         )
         assert r.status_code == 200
-        assert r.json()["enabled"] is True
-        assert "override" in r.json()["reason"]
+        body = r.json()
+        assert body["enabled"] is True
+        assert "override" in body["reason"]
+        assert body["expires_at"] is not None
 
 
 def test_dashboard():

@@ -23,9 +23,13 @@ PRODUCT_META = {
 
 def connect() -> sqlite3.Connection:
     DATA.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # 单文件库：写口同文件并发用它做跨连接互斥（覆盖/规则/发布都压在同库）。
+    # busy_timeout 让写锁等待而非立刻报 database is locked；WAL 读不阻塞写。
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=15000")
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -131,7 +135,20 @@ CREATE TABLE IF NOT EXISTS overrides(
   note TEXT NOT NULL DEFAULT '',
   active INTEGER NOT NULL DEFAULT 1,
   updated_at REAL NOT NULL,
+  expires_at REAL,
   UNIQUE(flag_id, env_id, subject_key)
+);
+CREATE TABLE IF NOT EXISTS override_shadows(
+  id INTEGER PRIMARY KEY,
+  flag_id INTEGER NOT NULL REFERENCES flags(id),
+  env_id INTEGER NOT NULL REFERENCES environments(id),
+  subject_key TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  expires_at REAL,
+  status TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  created_by TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS change_history(
   id INTEGER PRIMARY KEY,
@@ -140,7 +157,8 @@ CREATE TABLE IF NOT EXISTS change_history(
   action TEXT NOT NULL,
   detail TEXT NOT NULL,
   actor TEXT NOT NULL,
-  created_at REAL NOT NULL
+  created_at REAL NOT NULL,
+  expires_at REAL
 );
 CREATE TABLE IF NOT EXISTS audit_log(
   id INTEGER PRIMARY KEY,
@@ -246,8 +264,8 @@ def seed(conn: sqlite3.Connection) -> None:
         )
     for o in _load("overrides.json"):
         conn.execute(
-            "INSERT INTO overrides(id, flag_id, env_id, subject_key, effect, note, active, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO overrides(id, flag_id, env_id, subject_key, effect, note, active, updated_at, expires_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 o["id"],
                 o["flag_id"],
@@ -257,12 +275,23 @@ def seed(conn: sqlite3.Connection) -> None:
                 o.get("note", ""),
                 o["active"],
                 o["updated_at"],
+                o.get("expires_at"),
             ),
         )
     for h in _load("change_history.json"):
         conn.execute(
-            "INSERT INTO change_history(id, flag_id, env_id, action, detail, actor, created_at) VALUES(?,?,?,?,?,?,?)",
-            (h["id"], h.get("flag_id"), h.get("env_id"), h["action"], h["detail"], h["actor"], h["created_at"]),
+            "INSERT INTO change_history(id, flag_id, env_id, action, detail, actor, created_at, expires_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (
+                h["id"],
+                h.get("flag_id"),
+                h.get("env_id"),
+                h["action"],
+                h["detail"],
+                h["actor"],
+                h["created_at"],
+                h.get("expires_at"),
+            ),
         )
     sched_path = FIXTURES / "rollout_schedules.json"
     if sched_path.exists():
@@ -279,8 +308,19 @@ def seed(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT INTO experiment_bridge_stub(id, note) VALUES(1, ?)", ("实验平台桥接空桩未接通",))
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """老库补列：存在则跳过，不重建表、不丢数据。"""
+    overrides_cols = {r[1] for r in conn.execute("PRAGMA table_info(overrides)")}
+    if "expires_at" not in overrides_cols:
+        conn.execute("ALTER TABLE overrides ADD COLUMN expires_at REAL")
+    history_cols = {r[1] for r in conn.execute("PRAGMA table_info(change_history)")}
+    if "expires_at" not in history_cols:
+        conn.execute("ALTER TABLE change_history ADD COLUMN expires_at REAL")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         seed(conn)
         conn.commit()

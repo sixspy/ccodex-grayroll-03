@@ -1,6 +1,8 @@
 """在线求值：给定主体键，返回开关在某环境是否命中。"""
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
@@ -51,6 +53,17 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
             "SELECT * FROM overrides WHERE flag_id=? AND env_id=? AND subject_key=? AND active=1",
             (fl["id"], env["id"], subject),
         ).fetchone()
+        expired = False
+        forced_without_expiry = False
+        if ov:
+            if ov["expires_at"] is None:
+                # 老账/绕过写口落下的强制开缺时刻：不得永久命中，回落正式规则并标痕
+                ov = None
+                forced_without_expiry = True
+            elif float(ov["expires_at"]) <= time.time():
+                # 正式覆盖已过失效时刻：不得永久命中，回落到正式规则
+                ov = None
+                expired = True
         if ov:
             enabled = ov["effect"] == "force_on"
             return {
@@ -59,20 +72,36 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
                 "flag_key": flag_key,
                 "env_code": env_code,
                 "subject_key": subject,
+                "expires_at": ov["expires_at"],
                 "version": None,
             }
+        shadow = conn.execute(
+            "SELECT * FROM override_shadows WHERE flag_id=? AND env_id=? AND subject_key=? AND status='open'",
+            (fl["id"], env["id"], subject),
+        ).fetchone()
         rule = conn.execute(
             "SELECT * FROM flag_rules WHERE flag_id=? AND env_id=? AND official=1",
             (fl["id"], env["id"]),
         ).fetchone()
         if not rule:
-            return {
+            out = {
                 "enabled": False,
                 "reason": "no_official_rule",
                 "flag_key": flag_key,
                 "env_code": env_code,
                 "subject_key": subject,
             }
+            if shadow:
+                out["pending_override_shadow"] = {
+                    "id": shadow["id"],
+                    "effect": shadow["effect"],
+                    "status": shadow["status"],
+                }
+            if expired:
+                out["override_expired"] = True
+            if forced_without_expiry:
+                out["override_missing_expiry"] = True
+            return out
         percent_hit = eval_percent(subject, int(rule["percent"]), flag_key)
         cohort_hit = False
         if rule["cohort_id"]:
@@ -83,7 +112,7 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
                 ).fetchone()
             )
         enabled = combine_rule(rule["kind"], percent_hit, cohort_hit)
-        return {
+        out = {
             "enabled": enabled,
             "reason": "rule",
             "kind": rule["kind"],
@@ -95,6 +124,17 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
             "env_code": env_code,
             "subject_key": subject,
         }
+        if shadow:
+            out["pending_override_shadow"] = {
+                "id": shadow["id"],
+                "effect": shadow["effect"],
+                "status": shadow["status"],
+            }
+        if expired:
+            out["override_expired"] = True
+        if forced_without_expiry:
+            out["override_missing_expiry"] = True
+        return out
 
 
 @router.get("/board")

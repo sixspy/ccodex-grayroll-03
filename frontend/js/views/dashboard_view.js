@@ -23,6 +23,10 @@ export const DashboardView = {
     <div class="panel span-4" v-if="data"><div class="muted">开关数</div><p class="stat">{{ data.flags }}</p></div>
     <div class="panel span-4" v-if="data"><div class="muted">已生效</div><p class="stat">{{ data.active }}</p></div>
     <div class="panel span-4" v-if="data"><div class="muted">开放影子</div><p class="stat">{{ data.open_shadows }}</p></div>
+    <div class="panel span-3" v-if="data"><div class="muted">在册覆盖</div><p class="stat">{{ data.active_overrides }}</p></div>
+    <div class="panel span-3" v-if="data"><div class="muted">已过失效</div><p class="stat" :class="{warn: data.expired_overrides>0}">{{ data.expired_overrides }}</p></div>
+    <div class="panel span-3" v-if="data"><div class="muted">影子覆盖草案</div><p class="stat" :class="{warn: data.open_override_shadows>0}">{{ data.open_override_shadows }}</p></div>
+    <div class="panel span-3" v-if="data"><div class="muted">正式规则</div><p class="stat">{{ data.releases }}</p></div>
     <div class="panel span-6" v-if="data">
       <h2>状态分布</h2>
       <table><thead><tr><th>状态</th><th>数量</th></tr></thead>
